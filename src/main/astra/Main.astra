@@ -1,0 +1,247 @@
+// Define an agent named 'Main'
+agent Main {
+    // Import the module 'EIS' with alias 'ei'
+    module EIS ei;
+    // Import the module 'Console' with alias 'C'
+    module Console C;
+    // Import the module 'System' with alias 'S' for system functions such as sleep
+    module System S;
+    // Import the module 'Prelude' with alias 'prelude' for utility functions
+    module Prelude prelude;
+    // Import the module 'Math' with alias 'math' for mathematical operations
+    module Math math;
+
+    // Define a type 'tower' which includes various formulas for tower manipulation
+    types tower {
+        formula on(string, string);
+        formula holding(string);
+        formula free(string);
+        formula tower(list);
+    }
+
+    // Define inference for checking if a block is free (not on any other block)
+    inference free(string A) :- ~ei.on(string B, A);
+    // Define inference to check if a list of blocks forms a tower
+    inference tower(list Blocks) :- list_count(Blocks) > 0 & ei.on(at_index(Blocks, 0, string), "table");
+
+    // Main rule to start the agent and initiate building towers
+    rule +!main(list args) {
+        ei.launch("hw", "dependency/tower-1.3.0.jar");
+        ei.init();
+        ei.start();
+        ei.link("gripper");
+        C.println("Press New Block until block g is created...");
+        wait(ei.block("g"));
+
+        // Build predefined towers first, then start building random towers
+        !build_towers();
+        !random_tower();
+    }
+
+    // Rule to build a random tower with shuffled blocks
+    rule +!random_tower() {
+        list blocks = ["a", "b", "c", "d", "e", "f", "g"];
+
+        // Free each block and place it on the table before building the random tower
+        C.println("Freeing all blocks before building random tower...");
+        !free_blocks(blocks);
+
+        list shuffled = blocks;
+
+        // Shuffle the blocks randomly
+        int N = list_count(shuffled);
+        int i = 0;
+        while (i < N) {
+            int j = math.randomInt() % N;
+            prelude.swap(shuffled, i, j);
+            i = i + 1;
+        }
+
+        // Determine the height of the tower
+        int towerHeight = math.randomInt() % (N + 1);
+        if (towerHeight == 0) {
+            towerHeight = 1;
+        }
+
+        // Create a list of blocks to be used in the tower
+        list towerBlocks = [];
+        int j = 0;
+        while (j < towerHeight) {
+            string block = at_index(shuffled, j, string);
+            towerBlocks = towerBlocks + [block];
+            j = j + 1;
+        }
+
+        // Print the list of blocks that will be used to build the random tower
+        C.println("Random tower blocks: " + towerBlocks);
+        C.println("Building a tower of height: " + towerHeight);
+        !tower(towerBlocks);
+
+        // Pause for 2 seconds before freeing blocks
+        S.sleep(2000);
+
+        // Free blocks in the order they were built
+        C.println("Freeing blocks in the order they were built: " + towerBlocks);
+        forall(string block : towerBlocks) {
+            !free(block);
+        }
+        // Build another random tower
+        !random_tower();
+    }
+
+    // Rule to build predefined towers before starting random tower building
+    rule +!build_towers() {
+        C.println("Building a tower with 3 blocks: B, C, A...");
+        !tower(["b", "c", "a"]);
+        !wait_on_blocks(["b", "c", "a", "table"]);
+
+        S.sleep(2000);
+
+        C.println("Freeing blocks B, C, A ...");
+        !free_blocks(["b", "c", "a"]);
+
+        C.println("Building a tower with 4 blocks: A, C, D, B...");
+        !tower(["a", "c", "d", "b"]);
+        !wait_on_blocks(["a", "c", "d", "b", "table"]);
+
+        S.sleep(2000);
+
+        C.println("Freeing blocks A, C, D, B...");
+        !free_blocks(["a", "c", "d", "b"]);
+
+        C.println("Building a tower with 5 blocks: D, B, E, C, A...");
+        !tower(["d", "b", "e", "c", "a"]);
+        !wait_on_blocks(["d", "b", "e", "c", "a", "table"]);
+        S.sleep(2000);
+
+        C.println("Freeing blocks D, B, E, C, A...");
+        !free_blocks(["d", "b", "e", "c", "a"]);
+
+        C.println("All towers have been built!");
+    }
+
+    // Rule to free all blocks in the given list
+    rule +!free_blocks(list Blocks) {
+        forall(string block : Blocks) {
+            !free(block);
+        }
+    }
+
+    // Rule to wait until all blocks in the given list are on their respective blocks
+    rule +!wait_on_blocks(list Blocks) {
+        int count = list_count(Blocks);
+        int i = 0;
+        while (i < count - 1) {
+            string A = at_index(Blocks, i, string);
+            string B = at_index(Blocks, i + 1, string);
+            wait(ei.on(A, B));
+            i = i + 1;
+        }
+    }
+
+    // Rule to place a block on the table if it's the only block in the list
+    rule +!tower(list Blocks) : list_count(Blocks) == 1 {
+        string BaseBlock;
+        BaseBlock = at_index(Blocks, 0, string BaseBlock);
+        !on(BaseBlock, "table");
+    }
+
+    // Rule to build a tower with more than one block
+    rule +!tower(list Blocks) : list_count(Blocks) > 1 {
+        string BaseBlock;
+        BaseBlock = at_index(Blocks, 0, string);
+        list RemBlocks = [];
+        int count = list_count(Blocks);
+
+        int i = 1;
+        while (i < count) {
+            string CurrBlock = at_index(Blocks, i, string);
+            RemBlocks = RemBlocks + [CurrBlock];
+            i = i + 1;
+        }
+
+        // Build the remaining blocks as a tower
+        !tower(RemBlocks);
+        string NextBlock = at_index(RemBlocks, 0, string);
+        !on(BaseBlock, NextBlock);
+    }
+
+    // Rule to handle the event when a block is already on another block
+    rule +!on(string A, string B) : ei.on(A, B) {}
+
+    // Rule to put down a block onto another if the agent is holding it and the target block is free
+    rule +!on(string A, string B) : ei.holding(A) & free(B) {
+        ei.putdown(A, B);
+        wait(ei.on(A, B));
+    }
+
+    // Rule to free the target block if it's not free before placing another block on it
+    rule +!on(string A, string B) : ~free(B) {
+        !free(B);
+        !on(A, B);
+    }
+
+    // Rule to pick up a block if it's not currently being held
+    rule +!on(string A, string B) : ~ei.holding(A) {
+        !holding(A);
+        !on(A, B);
+    }
+
+    // Rule to handle when the agent is already holding a block
+    rule +!holding(string A) : ei.holding(A) {}
+
+    // Rule to pick up a block if the agent is not already holding it
+    rule +!holding(string A) : ~ei.holding(A) {
+        ei.pickup(A);
+        wait(ei.holding(A));
+    }
+
+    // Rule to free a block by removing any block on top of it
+    rule +!free(string A) : ei.on(string B, A) {
+        C.println("Freeing block " + A + " since block " + B + " is on top.");
+
+        !holding(B);
+        wait(ei.holding(B));
+        ei.putdown(B, "table");
+        wait(ei.on(B, "table"));
+
+        !holding(A);
+        wait(ei.holding(A));
+        ei.putdown(A, "table");
+        wait(ei.on(A, "table"));
+    }
+
+    // Rule to handle when a block is already free
+    rule +!free(string A) : ~ei.on(string B, A) {
+        C.println("Block " + A + " is already free.");
+    }
+
+    // Rule to handle the event when a new block is created
+    rule +$ei.event(block(string B)) {
+        C.println("New block created: " + B);
+        if (B == "g") {
+            !build_towers();
+            !random_tower();
+        }
+    }
+
+    // Rule to handle a new perception event
+    rule +$ei.event(funct belief) {
+        C.println("New Perception Event: " + belief);
+    }
+
+    // Rule to handle the removal of a perception event
+    rule -$ei.event(funct belief) {
+        C.println("Perception Event Removed: " + belief);
+    }
+
+    // Rule to handle the event when one block is placed on another
+    rule +$ei.event(on(string A, string B)) {
+        C.println(A + " has been placed on: " + B);
+    }
+
+    // Rule to handle the event when the agent picks up a block
+    rule +$ei.event(holding(string Y)) {
+        C.println("I picked up: " + Y);
+    }
+}

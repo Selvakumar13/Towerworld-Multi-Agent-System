@@ -1,0 +1,20 @@
+# Maven build output
+target/
+**/target/
+
+# IDE
+.idea/
+.vscode/
+
+# OS junk
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# SVN metadata (should never be in Git)
+.svn/
+**/.svn/
+
+# Java build artifacts
+*.class
+*.log
